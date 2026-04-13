@@ -1,8 +1,11 @@
-Gerar uma rota Elysia protegida por autenticação. Formato de $ARGUMENTS: `{METHOD} /{path} {use-case-kebab} {role}`
+---
+description: Gerar uma rota Elysia protegida por autenticação. Formato de $ARGUMENTS: `{METHOD} /{path} {use-case-kebab} {role}`
+---
 
 O `role` é opcional. Se omitido, default é `true` (qualquer autenticado).
 
 Exemplos:
+
 - `POST /products create-product` → auth: true
 - `GET /admin/users list-all-users admin` → auth: 'admin'
 - `GET /team/members list-team-members manager` → auth: 'manager'
@@ -55,6 +58,7 @@ export const {actionVariable} = new Elysia()
 ```
 
 Onde `{role_value}` é:
+
 - `true` se nenhum role foi especificado
 - `'manager'` ou `'admin'` se especificado
 
@@ -68,6 +72,7 @@ Onde `{role_value}` é:
 ## Próximos passos
 
 Informar ao usuário:
+
 1. Preencher Zod schemas
 2. Mapear input (incluindo `user.id` se necessário)
 3. Ajustar error handling

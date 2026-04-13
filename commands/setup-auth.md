@@ -1,4 +1,6 @@
-Configurar BetterAuth num projeto existente com Bun + Elysia + Drizzle.
+---
+description: Configurar BetterAuth num projeto existente com Bun + Elysia + Drizzle.
+---
 
 ## Pré-requisitos
 
@@ -15,12 +17,14 @@ bun add better-auth
 ### 2. Adicionar variáveis de ambiente
 
 Em `.env`:
+
 ```env
 BETTER_AUTH_SECRET=gerar-com-openssl-rand-base64-32
 BETTER_AUTH_URL=http://localhost:3333
 ```
 
 Em `src/env.ts`, adicionar ao schema:
+
 ```typescript
 BETTER_AUTH_SECRET: z.string().min(1),
 BETTER_AUTH_URL: z.string().url(),
@@ -33,6 +37,7 @@ Seguir o padrão da skill `better-auth-setup`.
 ### 4. Criar schemas Drizzle
 
 Criar os 4 arquivos de schema seguindo a skill `auth-schemas`:
+
 - `src/database/schema/users.ts`
 - `src/database/schema/sessions.ts`
 - `src/database/schema/accounts.ts`
@@ -54,14 +59,15 @@ Criar `src/http/plugins/better-auth.ts` seguindo a skill `elysia-auth-plugin`.
 ### 7. Registrar no app
 
 Em `src/index.ts`:
+
 ```typescript
-import { betterAuthPlugin } from './http/plugins/better-auth'
+import { betterAuthPlugin } from "./http/plugins/better-auth";
 
 export const app = new Elysia()
   .use(openapi())
   .use(betterAuthPlugin)
   // ...rotas
-  .listen(env.PORT)
+  .listen(env.PORT);
 ```
 
 ### 8. Informar próximos passos
