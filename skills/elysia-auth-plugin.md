@@ -4,6 +4,36 @@ description: "Plugin Elysia para BetterAuth: macro de autenticação, role check
 
 # Elysia Auth Plugin — Macro e Role Check
 
+## CORS coerente com BetterAuth
+
+CORS e `trustedOrigins` (em `src/auth.ts`) precisam aceitar a **mesma** lista de origens. Se um aceita e o outro rejeita, login quebra.
+
+```typescript
+import { cors } from '@elysiajs/cors'
+import { env } from '@/env'
+
+app.use(cors({
+  origin: (request) => {
+    const origin = request.headers.get('origin')
+    if (!origin) return false
+
+    const allowed = [env.APP_URL, 'http://localhost:3000']
+    if (allowed.includes(origin)) return true
+
+    // Wildcard de preview (ajustar regex ao padrão do seu provider)
+    if (/^https:\/\/front-app-[a-z0-9-]+\.vercel\.app$/.test(origin)) return true
+
+    return false
+  },
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}))
+```
+
+- `credentials: true` é **obrigatório** para cookies de sessão atravessarem CORS.
+- A regex de preview deve casar com a URL real (ex: Vercel: `https://<project>-<hash>.vercel.app`).
+- Se `trustedOrigins` aceita um domínio, o CORS também precisa aceitar — auditar em conjunto.
+
 ## Plugin: src/http/plugins/better-auth.ts
 
 ```typescript
@@ -90,6 +120,27 @@ user   (nível 0) → acessa apenas user
 - O macro injeta `user` e `session` no contexto da rota
 - 401 = não autenticado (sem session válida)
 - 403 = autenticado mas sem permissão (role insuficiente)
+
+## Variante: macro `authWith2FA`
+
+Se o projeto habilita o plugin `twoFactor()` do BetterAuth, criar uma macro adicional que exige 2FA verificado:
+
+```typescript
+.macro({
+  authWith2FA: {
+    async resolve({ status, request: { headers } }) {
+      const session = await auth.api.getSession({ headers })
+      if (!session) return status(401, { message: 'Unauthorized' })
+      if (!session.user.twoFactorEnabled || !session.session.twoFactorVerified) {
+        return status(403, { message: '2FA required' })
+      }
+      return { user: session.user, session: session.session }
+    },
+  },
+})
+```
+
+Usar nas rotas sensíveis: `{ authWith2FA: true }`. Não substitui o macro `auth` — coexistem.
 
 ## OpenAPI para rotas de auth
 

@@ -72,3 +72,33 @@ const { product } = await useCase.execute({
 ```
 
 O use case nunca acessa session/auth diretamente — recebe apenas os dados necessários via input.
+
+## Public route pattern
+
+Rotas públicas (invite links, share, magic-link confirm) não usam o macro `auth`. Mesmo assim, são tier de **menor confiança** — UUIDs imprevisíveis não bastam.
+
+Regras:
+
+- **Naming explícito**: `Get{Public}{Entity}UseCase`, rota em `/public/...` ou prefix similar.
+- **Payload mínimo**: nunca expor `inviterId`, `userId`, `organizationId` ou qualquer campo que não seja estritamente necessário para a renderização da tela pública.
+- **Sem listagem**: rotas públicas só aceitam ID/token específico — nunca enumeram recursos.
+- **Rate limit** se possível (especialmente em endpoints que validam tokens).
+
+Exemplo:
+
+```typescript
+// ❌ Rota pública vazando dados
+.get('/public/invites/:id', async ({ params }) => {
+  return await db.query.invites.findFirst({ where: eq(invites.id, params.id) })
+  // retorna inviterId, organizationId, todos os campos
+})
+
+// ✅ Rota pública com payload mínimo
+.get('/public/invites/:id', async ({ params }) => {
+  const { useCase } = makeGetPublicInviteUseCase()
+  const { invite } = await useCase.execute({ id: params.id })
+  return { organizationName: invite.organizationName, role: invite.role }
+})
+```
+
+Quando uma rota multi-org muda para multi-tenant: roles `owner/admin/member` (do plugin `organization` do BetterAuth) substituem `user/manager/admin`. A hierarquia genérica deste skill cobre o caso single-tenant.

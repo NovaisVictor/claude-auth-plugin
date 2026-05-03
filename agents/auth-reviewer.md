@@ -41,6 +41,20 @@ Você é um reviewer especializado em autenticação e autorização com BetterA
 - `BETTER_AUTH_SECRET` está no env schema?
 - `generateId: false` está configurado?
 - Password hash usa `Bun.password.hash`?
+- `defaultCookieAttributes` configurado com `sameSite`/`secure` por env? → AVISO se ausente (vai falhar em prod cross-site)
+- `trustedOrigins` usa env var em vez de URLs hardcoded? → AVISO se hardcoded
+- Lista de `trustedOrigins` inclui `env.APP_URL` + dev + wildcard de preview (se aplicável)?
+
+### CORS
+
+- `cors({ credentials: true })` configurado?
+- Lista de origens do CORS é coerente com `trustedOrigins`? → ERRO: se uma aceita e outra rejeita, login quebra
+- `cors` com `origin: '*'` + `credentials: true`? → ERRO: combinação inválida no browser
+
+### Public routes
+
+- Rota sem macro `auth` retorna campos sensíveis (`userId`, `inviterId`, `organizationId`)? → ERRO: público vaza dados
+- Rota pública lista recursos (não filtra por ID/token específico)? → AVISO
 
 ### Padrões de role
 
@@ -55,4 +69,4 @@ Para cada problema:
 - Severidade (erro / aviso)
 - Sugestão de correção
 
-Agrupar por: proteção de rotas, separação de concerns, configuração.
+Agrupar por: proteção de rotas, separação de concerns, configuração, CORS, public routes.
