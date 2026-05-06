@@ -1,6 +1,6 @@
 # claude-auth-plugin
 
-Plugin de autenticação com **BetterAuth + Elysia + Drizzle**. Email/password, magic link, roles (user/manager/admin).
+Plugin de autenticação com **BetterAuth + Elysia + Drizzle**. Email/password, magic link, passkeys, 2FA, organizations multi-tenant.
 
 ## Instalação
 
@@ -20,14 +20,29 @@ Usado em conjunto com [claude-backend-plugin](https://github.com/NovaisVictor/cl
 
 ---
 
+## O que muda na v1.2.0
+
+- **Nova skill `organization-plugin`** — plugin `organization()` do BetterAuth com roles `owner/admin/member`, invitations via Resend, gate de 2FA setup.
+- **Macro `activeOrg`** documentada em `elysia-auth-plugin.md` (rotas org-scoped que injetam `organization.id` no contexto).
+- **`auth-schemas.md`** atualizada com schemas de `organizations`, `members`, `invitations`, `passkeys`, `two_factors` (além dos 4 core).
+- **`better-auth-setup.md`** ganhou seção sobre Resend (email transacional) e referências aos plugins `passkey()` e `twoFactor()`.
+- **Public route pattern** com payload mínimo (sem `inviterId`) já estava em `roles-authorization.md` — agora referenciado por `organization-plugin`.
+- Macro `authWith2FA` documentada explicitamente para rotas sensíveis quando `passkey()` / `twoFactor()` estão ativos.
+- `protected-route` command suporta `org` e `2fa` como scope além de `manager`/`admin`.
+- Paths atualizados: `src/http/routes/{entity}/` (alinhado com `claude-backend-plugin` v1.2.0).
+
+---
+
 ## Adicionando auth a um projeto existente
 
 Pré-requisito: projeto backend já configurado com Elysia + Drizzle (ver claude-backend-plugin).
 
-### 1. Instalar dependência
+### 1. Instalar dependências
 
 ```bash
-bun add better-auth
+bun add better-auth resend
+# Opcionais conforme features:
+bun add @better-auth/passkey   # WebAuthn / passkeys
 ```
 
 ### 2. Adicionar variáveis de ambiente
@@ -36,7 +51,10 @@ No `.env`:
 
 ```env
 BETTER_AUTH_SECRET=gerar-com-openssl-rand-base64-32
-BETTER_AUTH_URL=http://localhost:3333
+BETTER_AUTH_URL=http://localhost:8080
+APP_URL=http://localhost:3000
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxx
+NODE_ENV=development
 ```
 
 No `src/env.ts`, adicionar ao schema:
@@ -44,140 +62,71 @@ No `src/env.ts`, adicionar ao schema:
 ```typescript
 BETTER_AUTH_SECRET: z.string().min(1),
 BETTER_AUTH_URL: z.string().url(),
+APP_URL: z.string().url(),
+RESEND_API_KEY: z.string().min(1),
+NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 ```
 
-### 3. Criar src/auth.ts
+### 3. Criar `src/lib/email.ts`
 
 ```typescript
-import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { admin, magicLink, openAPI } from "better-auth/plugins";
-import { db } from "./database/client";
+import { Resend } from 'resend'
+import { env } from '@/env'
 
-export const auth = betterAuth({
-  basePath: "/auth",
-  database: drizzleAdapter(db, {
-    provider: "pg",
-    usePlural: true,
-    camelCase: false,
-  }),
-  advanced: {
-    database: {
-      generateId: false,
-    },
-  },
-  plugins: [
-    openAPI(),
-    admin(),
-    magicLink({
-      sendMagicLink: async ({ email, token, url }, ctx) => {
-        // TODO: implementar envio de email
-      },
-    }),
-  ],
-  emailAndPassword: {
-    enabled: true,
-    password: {
-      hash: (password: string) => Bun.password.hash(password),
-      verify: ({ password, hash }) => Bun.password.verify(password, hash),
-    },
-  },
-  session: {
-    expiresIn: 60 * 60 * 24 * 7,
-    cookieCache: {
-      enabled: true,
-      maxAge: 60 * 5,
-    },
-  },
-});
+export const resend = new Resend(env.RESEND_API_KEY)
+export const FROM_EMAIL = 'onboarding@resend.dev'
 ```
 
-### 4. Criar schemas Drizzle
+### 4. Criar `src/auth.ts`
 
-Criar um arquivo por tabela em `src/database/schema/`:
+Ver skill `better-auth-setup`. Highlights:
 
-- `users.ts` — tabela de usuários (com campo `role`)
-- `sessions.ts` — sessões ativas
-- `accounts.ts` — contas de login (email, OAuth)
-- `verifications.ts` — tokens de verificação
+- `trustedOrigins` lendo `env.APP_URL` + `localhost` + wildcard de preview
+- `advanced.defaultCookieAttributes` com `sameSite`/`secure` por `env.NODE_ENV`
+- Plugins relevantes: `openAPI()`, `admin()`, `magicLink()`, opcionalmente `organization()`, `passkey()`, `twoFactor()`
 
-Ver skill `auth-schemas` do plugin para o conteúdo de cada arquivo.
+### 5. Criar schemas Drizzle
 
-Atualizar `src/database/schema/index.ts` com os imports.
+Seguir skill `auth-schemas`. Core: `users`, `sessions`, `accounts`, `verifications`.
 
-### 5. Gerar e aplicar migrations
+Adicionar conforme plugins ativos:
+- `organization()` → `organizations`, `members`, `invitations` + `sessions.activeOrganizationId`
+- `passkey()` → `passkeys`
+- `twoFactor()` → `two_factors` + `users.twoFactorEnabled`
+
+### 6. Criar `src/http/plugins/better-auth.ts`
+
+Ver skill `elysia-auth-plugin`. Macros disponíveis:
+
+- `auth: true | 'manager' | 'admin'` — sessão + role global
+- `activeOrg: true` — sessão + org ativa (injeta `organization`)
+- `authWith2FA: true` — sessão + 2FA habilitado
+
+### 7. Configurar CORS coerente
+
+```bash
+bun add @elysiajs/cors
+```
+
+Em `src/index.ts`, configurar com a **mesma** lista de origens de `trustedOrigins`. Ver skill `elysia-auth-plugin`. Sempre `credentials: true`.
+
+### 8. Gerar e aplicar migrations
 
 ```bash
 bun run db:generate
 bun run db:migrate
 ```
 
-### 6. Criar plugin Elysia
-
-**src/http/plugins/better-auth.ts**
-
-```typescript
-import Elysia from "elysia";
-import { auth } from "@/auth";
-
-type UserRole = "user" | "manager" | "admin";
-
-const ROLE_HIERARCHY: Record<UserRole, number> = {
-  user: 0,
-  manager: 1,
-  admin: 2,
-};
-
-export const betterAuthPlugin = new Elysia({ name: "better-auth" })
-  .mount(auth.handler)
-  .macro({
-    auth: {
-      async resolve({ status, request: { headers } }, params: true | UserRole) {
-        const session = await auth.api.getSession({ headers });
-
-        if (!session) {
-          return status(401, { message: "Unauthorized" });
-        }
-
-        const requiredRole = params === true ? "user" : params;
-        const userRole = (session.user.role as UserRole) ?? "user";
-
-        if (ROLE_HIERARCHY[userRole] < ROLE_HIERARCHY[requiredRole]) {
-          return status(403, { message: "Forbidden" });
-        }
-
-        return {
-          user: session.user,
-          session: session.session,
-        };
-      },
-    },
-  });
-```
-
-### 7. Registrar no app
-
-Em `src/index.ts`:
-
-```typescript
-import { betterAuthPlugin } from "./http/plugins/better-auth";
-
-export const app = new Elysia()
-  .use(openapi())
-  .use(betterAuthPlugin)
-  .listen(env.PORT);
-```
-
-### 8. Testar
+### 9. Testar
 
 ```bash
 # Signup
-curl -X POST http://localhost:3333/auth/sign-up/email \
+curl -X POST http://localhost:8080/auth/sign-up/email \
   -H "Content-Type: application/json" \
   -d '{"name":"Test","email":"test@test.com","password":"123456"}'
 
 # Login
-curl -X POST http://localhost:3333/auth/sign-in/email \
+curl -X POST http://localhost:8080/auth/sign-in/email \
   -H "Content-Type: application/json" \
   -d '{"email":"test@test.com","password":"123456"}'
 ```
@@ -195,28 +144,38 @@ curl -X POST http://localhost:3333/auth/sign-in/email \
 
 // Apenas admin
 .delete('/admin/users/:id', handler, { auth: 'admin' })
+
+// Multi-tenant (org ativa) — injeta `organization` no contexto
+.get('/products', handler, { activeOrg: true })
+
+// Sensível (exige 2FA)
+.delete('/passkeys/:id', handler, { authWith2FA: true })
 ```
 
 ## O que o plugin inclui
 
 ### Skills
 
-| Skill                 | Ativada quando                            |
-| --------------------- | ----------------------------------------- |
-| `better-auth-setup`   | Configurar auth, deps, env                |
-| `elysia-auth-plugin`  | Macro auth, role check, proteção de rotas |
-| `auth-schemas`        | Schemas Drizzle das tabelas de auth       |
-| `roles-authorization` | Hierarquia de roles, separação de rotas   |
+| Skill                  | Ativada quando                                                  |
+| ---------------------- | --------------------------------------------------------------- |
+| `better-auth-setup`    | Configurar auth, deps, env, Resend                              |
+| `elysia-auth-plugin`   | Macros `auth`, `activeOrg`, `authWith2FA`, CORS coerente        |
+| `auth-schemas`         | Schemas Drizzle (core + organization + passkey + 2FA)           |
+| `roles-authorization`  | Hierarquia de roles, separação de rotas, public route pattern   |
+| `organization-plugin`  | Multi-tenant: `organization()`, members, invitations, owner/admin/member |
 
 ### Commands
 
-| Command                                                | Uso                                     |
-| ------------------------------------------------------ | --------------------------------------- |
-| `/setup-auth`                                          | Configurar auth do zero (guia completo) |
-| `/protected-route POST /products create-product admin` | Criar rota protegida com role           |
+| Command                                                | Uso                                                  |
+| ------------------------------------------------------ | ---------------------------------------------------- |
+| `/setup-auth`                                          | Configurar auth do zero                              |
+| `/protected-route POST /products create-product`       | Rota com `auth: true`                                |
+| `/protected-route POST /products create-product org`   | Rota multi-tenant (`activeOrg: true`)                |
+| `/protected-route GET /admin/users list-users admin`   | Rota admin (`auth: 'admin'`)                         |
+| `/protected-route DELETE /passkeys/:id delete 2fa`     | Rota sensível (`authWith2FA: true`)                  |
 
 ### Agents
 
-| Agent           | Função                                 |
-| --------------- | -------------------------------------- |
-| `auth-reviewer` | Review de segurança e auth (read-only) |
+| Agent           | Função                                                              |
+| --------------- | ------------------------------------------------------------------- |
+| `auth-reviewer` | Review de cookies, trustedOrigins, CORS, multi-tenant, public routes |

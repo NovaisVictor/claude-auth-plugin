@@ -7,6 +7,7 @@ skills:
   - elysia-auth-plugin
   - roles-authorization
   - auth-schemas
+  - organization-plugin
 allowed_tools:
   - Read
   - Glob
@@ -61,6 +62,15 @@ Você é um reviewer especializado em autenticação e autorização com BetterA
 - Mesma rota retorna dados diferentes por role? → AVISO: separar em rotas distintas
 - Role check hardcoded no controller fora do macro? → AVISO: usar o macro
 
+### Multi-tenant (plugin `organization()`)
+
+- Rota multi-tenant sem macro `activeOrg` (recebe `organizationId` no body em vez de via sessão)? → ERRO: cliente não escolhe org no payload
+- Use case multi-tenant aceita `organizationId` no input mas a rota não usa `activeOrg`? → ERRO
+- Repository multi-tenant tem método sem filtro por `organizationId`? → ERRO: vaza dados entre orgs
+- Rota pública de invitation expõe `inviterId` ou `userId`? → ERRO
+- Verificação de role `owner`/`admin`/`member` está no use case (não no macro)? → OK
+- Plugin `passkey()` ou `twoFactor()` ativo mas sem macro `authWith2FA` em rotas sensíveis? → AVISO
+
 ## Formato do output
 
 Para cada problema:
@@ -69,4 +79,4 @@ Para cada problema:
 - Severidade (erro / aviso)
 - Sugestão de correção
 
-Agrupar por: proteção de rotas, separação de concerns, configuração, CORS, public routes.
+Agrupar por: proteção de rotas, separação de concerns, configuração, CORS, public routes, multi-tenant.

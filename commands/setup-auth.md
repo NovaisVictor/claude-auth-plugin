@@ -20,7 +20,7 @@ Em `.env`:
 
 ```env
 BETTER_AUTH_SECRET=gerar-com-openssl-rand-base64-32
-BETTER_AUTH_URL=http://localhost:3333
+BETTER_AUTH_URL=http://localhost:8080
 APP_URL=http://localhost:3000
 NODE_ENV=development
 ```
@@ -43,12 +43,18 @@ Seguir o padrão da skill `better-auth-setup`. Garantir que o `auth.ts` gerado i
 
 ### 4. Criar schemas Drizzle
 
-Criar os 4 arquivos de schema seguindo a skill `auth-schemas`:
+Criar os arquivos de schema seguindo a skill `auth-schemas`. Os 4 sempre obrigatórios:
 
 - `src/database/schema/users.ts`
 - `src/database/schema/sessions.ts`
 - `src/database/schema/accounts.ts`
 - `src/database/schema/verifications.ts`
+
+Adicionar conforme os plugins ativos:
+
+- `organizations.ts`, `members.ts`, `invitations.ts` — se usar `organization()` (ver skill `organization-plugin`)
+- `pass-keys.ts` — se usar `passkey()`
+- `two-factors.ts` — se usar `twoFactor()`
 
 Atualizar `src/database/schema/index.ts`.
 
@@ -85,8 +91,8 @@ export const app = new Elysia()
 
 ### 9. Informar próximos passos
 
-1. Implementar envio de email no `sendMagicLink`
+1. Configurar Resend (`bun add resend`, `RESEND_API_KEY` no env, `src/lib/email.ts`) para `sendMagicLink` / `sendInvitationEmail`. Ver skill `better-auth-setup`.
 2. Testar signup: `POST /auth/sign-up/email`
 3. Testar login: `POST /auth/sign-in/email`
-4. Proteger rotas com `auth: true`, `auth: 'manager'`, `auth: 'admin'`
+4. Proteger rotas com `auth: true`, `auth: 'manager'`, `auth: 'admin'`. Para multi-tenant, usar `activeOrg: true` (ver skill `organization-plugin`).
 5. Em prod cross-site: confirmar que cookies estão sendo aceitos pelo browser (DevTools → Application → Cookies)

@@ -4,7 +4,11 @@ description: "Padrões de autorização e roles com BetterAuth admin plugin. Use
 
 # Roles e Autorização
 
-## Roles disponíveis
+> **Single-tenant** (este skill): roles globais `user/manager/admin` no `users.role` (plugin `admin()`).
+> **Multi-tenant** (skill `organization-plugin`): roles por organização `owner/admin/member` no `members.role` (plugin `organization()`).
+> As duas coexistem em projetos multi-tenant.
+
+## Roles disponíveis (single-tenant)
 
 | Role | Nível | Acesso |
 |------|-------|--------|
@@ -101,4 +105,38 @@ Exemplo:
 })
 ```
 
-Quando uma rota multi-org muda para multi-tenant: roles `owner/admin/member` (do plugin `organization` do BetterAuth) substituem `user/manager/admin`. A hierarquia genérica deste skill cobre o caso single-tenant.
+## Multi-tenant: roles `owner/admin/member`
+
+Quando o projeto usa o plugin `organization()`, **as roles relevantes mudam**:
+
+| Contexto | Roles | Tabela | Macro de proteção |
+|---|---|---|---|
+| Single-tenant (genérico) | `user/manager/admin` | `users.role` | `auth: 'admin'` |
+| Multi-tenant (org-scoped) | `owner/admin/member` | `members.role` | `activeOrg: true` |
+
+As duas coexistem:
+
+- `user.role` é **global** (controla quem pode criar uma org, por exemplo).
+- `member.role` é **por organização** (owner/admin gerencia members; member só consome).
+
+Em rotas multi-tenant, a verificação de role dentro da org acontece no use case (não no macro):
+
+```typescript
+async execute({ organizationId, userId }: DeleteOrgRequest) {
+  const member = await this.membersRepository.findByOrgAndUser(organizationId, userId)
+  if (member?.role !== 'owner') throw new ForbiddenError()
+  // ...
+}
+```
+
+Resumo de macros:
+
+| Caso | Macro |
+|------|-------|
+| Rota global, qualquer autenticado | `auth: true` |
+| Rota global, requer role `manager`/`admin` | `auth: 'manager'` / `auth: 'admin'` |
+| Rota multi-tenant (org-scoped) | `activeOrg: true` |
+| Rota sensível (precisa 2FA verificado) | `authWith2FA: true` |
+| Rota pública | (sem macro) |
+
+Ver skill `organization-plugin` para o setup completo do plugin `organization()`.

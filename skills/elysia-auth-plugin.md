@@ -112,6 +112,8 @@ user   (nível 0) → acessa apenas user
 `auth: 'manager'` aceita manager e admin.
 `auth: 'admin'` aceita apenas admin.
 
+> Em projetos multi-tenant (com plugin `organization()`), as roles são `owner/admin/member` e ficam por organização — não no `users.role`. Ver skill `organization-plugin`.
+
 ## Regras
 
 - O `betterAuthPlugin` deve ser registrado via `.use()` em cada rota ou grupo de rotas que precisa de auth
@@ -121,9 +123,9 @@ user   (nível 0) → acessa apenas user
 - 401 = não autenticado (sem session válida)
 - 403 = autenticado mas sem permissão (role insuficiente)
 
-## Variante: macro `authWith2FA`
+## Macro `authWith2FA`
 
-Se o projeto habilita o plugin `twoFactor()` do BetterAuth, criar uma macro adicional que exige 2FA verificado:
+Quando o projeto habilita o plugin `twoFactor()` ou `passkey()`, criar uma macro adicional que exige 2FA verificado para rotas sensíveis:
 
 ```typescript
 .macro({
@@ -131,8 +133,11 @@ Se o projeto habilita o plugin `twoFactor()` do BetterAuth, criar uma macro adic
     async resolve({ status, request: { headers } }) {
       const session = await auth.api.getSession({ headers })
       if (!session) return status(401, { message: 'Unauthorized' })
-      if (!session.user.twoFactorEnabled || !session.session.twoFactorVerified) {
-        return status(403, { message: '2FA required' })
+      if (!session.user.twoFactorEnabled) {
+        return status(403, {
+          message: '2FA_REQUIRED',
+          error: 'You must enable two-factor authentication to access this resource',
+        })
       }
       return { user: session.user, session: session.session }
     },
@@ -141,6 +146,71 @@ Se o projeto habilita o plugin `twoFactor()` do BetterAuth, criar uma macro adic
 ```
 
 Usar nas rotas sensíveis: `{ authWith2FA: true }`. Não substitui o macro `auth` — coexistem.
+
+## Macro `activeOrg` (multi-tenant)
+
+Quando o projeto usa o plugin `organization()`, rotas org-scoped precisam:
+
+1. Sessão válida.
+2. Organização ativa selecionada na sessão.
+3. Injeção de `organization.id` no contexto pra o use case filtrar por `organizationId`.
+
+```typescript
+.macro({
+  activeOrg: {
+    async resolve({ status, request: { headers } }) {
+      const session = await auth.api.getSession({ headers })
+      if (!session) return status(401, { message: 'Unauthorized' })
+
+      if (!session.session.activeOrganizationId) {
+        return status(400, { message: 'No active organization' })
+      }
+
+      const organization = await auth.api.getFullOrganization({ headers })
+      if (!organization) {
+        return status(404, { message: 'Active organization not found' })
+      }
+
+      return {
+        user: session.user,
+        organization: {
+          id: organization.id,
+          slug: organization.slug,
+        },
+      }
+    },
+  },
+})
+```
+
+Uso na rota:
+
+```typescript
+export const createProductRoute = new Elysia()
+  .use(betterAuthPlugin)
+  .post(
+    '/products',
+    async ({ body, organization, status }) => {
+      const useCase = makeCreateProductUseCase()
+      const { product } = await useCase.execute({
+        organizationId: organization.id,  // ← injetado pelo macro
+        ...body,
+      })
+      return status(201, product)
+    },
+    {
+      activeOrg: true,
+      body: z.object({ name: z.string().min(1), priceInCents: z.number().int() }),
+    },
+  )
+```
+
+**Regra:** todo CRUD multi-tenant usa `activeOrg: true` — nunca aceita `organizationId` no body (cliente não escolhe). Use cases recebem `organizationId` da sessão e filtram tudo por ele.
+
+Status:
+- 401 — sem sessão.
+- 400 — sessão sem `activeOrganizationId`.
+- 404 — `activeOrganizationId` aponta pra org inexistente.
 
 ## OpenAPI para rotas de auth
 

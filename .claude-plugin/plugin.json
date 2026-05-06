@@ -1,7 +1,7 @@
 {
   "name": "claude-auth-plugin",
-  "version": "1.1.0",
-  "description": "Plugin de autenticação com BetterAuth + Elysia + Drizzle. Email/password, magic link, roles (user/manager/admin).",
+  "version": "1.2.0",
+  "description": "Plugin de autenticação com BetterAuth + Elysia + Drizzle. Email/password, magic link, passkeys, 2FA, organizations multi-tenant.",
   "author": {
     "name": "Victor Novais"
   },
